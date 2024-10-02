@@ -53,6 +53,7 @@ __all__ = [
     "GeneratorTask",
     "Task",
     "ComplexityScorer",
+    "CRAFTGenerator",
     "EvolInstruct",
     "EvolComplexity",
     "EvolComplexityGenerator",
