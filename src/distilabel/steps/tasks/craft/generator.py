@@ -127,7 +127,6 @@ class CraftGenerator(Task):
 
     """
 
-    prompt_instructions: str
     corpus: List[str] = []
     task: TaskType
 
@@ -150,7 +149,6 @@ class CraftGenerator(Task):
         """The inputs for the task."""
         return {
             "few_shots": True,
-            "corpus": True,
         }
 
     @property
@@ -166,11 +164,11 @@ class CraftGenerator(Task):
             self._generate_few_shots(
                 prompt_instruction=self.prompt_instructions,
                 corpus_example=sample,
-                few_shots=input.few_shots,
+                few_shots=input["few_shots"],
                 task=self.task,
                 num_shots=self.num_shots,
             )
-            for sample in input.corpus
+            for sample in self.corpus
         ]
 
     def _generate_few_shots(

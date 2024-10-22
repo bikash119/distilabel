@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from distilabel.llms import InferenceEndpointsLLM
-from distilabel.steps.tasks import ApiGenGenerator
+from distilabel.steps.tasks import APIGenGenerator
 
 llm = InferenceEndpointsLLM(
     model_id="meta-llama/Meta-Llama-3.1-70B-Instruct",
@@ -22,7 +22,7 @@ llm = InferenceEndpointsLLM(
         "max_new_tokens": 1024,
     },
 )
-apigen = ApiGenGenerator(use_default_structured_output=False, llm=llm)
+apigen = APIGenGenerator(use_default_structured_output=False, llm=llm)
 apigen.load()
 
 res = next(
