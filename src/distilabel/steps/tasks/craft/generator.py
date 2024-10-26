@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import random
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Union
+
+from pydantic import PrivateAttr
 
 from distilabel.steps.tasks.base import Task
 from distilabel.steps.tasks.craft.utils import FormatExtractor
+from distilabel.steps.tasks.typing import FormattedInput
 
 if TYPE_CHECKING:
     from distilabel.steps.typing import StepColumns
@@ -127,8 +131,13 @@ class CraftGenerator(Task):
 
     """
 
-    corpus: List[str] = []
+    corpus: List[Dict[str, Any]] = []
     task: TaskType
+    prompt_instructions: str = ""
+    num_shots: int = 3
+    number: Union[int, List[int], Dict[int, float]] = 1
+
+    _number: Union[int, None] = PrivateAttr(None)
 
     def load(self) -> None:
         # Based on the task type, set the meta instructions or jinja template
@@ -156,18 +165,21 @@ class CraftGenerator(Task):
         """The output for the task are the queries and corresponding answers."""
         return ["corpus_sample", "task_sample"]
 
-    def format_input(self, input: Dict[str, Any]):
+    def format_input(self, inputs: Dict[str, Any]) -> List[FormattedInput]:
         """
         Format the input for the task.
         """
         return [
-            self._generate_few_shots(
-                prompt_instruction=self.prompt_instructions,
-                corpus_example=sample,
-                few_shots=input["few_shots"],
-                task=self.task,
-                num_shots=self.num_shots,
-            )
+            {
+                "role": "user",
+                "content": self._generate_few_shots(
+                    prompt_instruction=self.prompt_instructions,
+                    corpus_example=sample,
+                    few_shots=inputs["few_shots"],
+                    task=self.task,
+                    num_shots=self.num_shots,
+                ),
+            }
             for sample in self.corpus
         ]
 
@@ -206,10 +218,69 @@ class CraftGenerator(Task):
             else:
                 raise ValueError("Unknown task.")
 
-        formatted = f"{b_inst} {self.prompt_instructions} \n\n___________\nText: {text} {e_inst} "
-        formatted += f"{json_dict}{eos} "
-        out += formatted
+            formatted = f"{b_inst} {self.prompt_instructions} \n\n___________\nText: {text} {e_inst} "
+            formatted += f"{json_dict}{eos} "
+            out += formatted
 
         out += f"{b_inst} {self.prompt_instructions} \n\n___________\nText: {corpus_example['text'].strip()} {e_inst} "
 
         return out
+
+    def format_output(
+        self, output: Union[str, None], input: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        instruction, ingredients, steps = "", "", ""
+        sample_str = output
+        assert "}" in sample_str, "No JSON found."
+
+        error_msgs = []
+        potential_jsons = sample_str.split("}")
+        for potential_json in potential_jsons:
+            if not potential_json:
+                continue
+            json_str = potential_json + "}"
+
+            try:
+                recipe_dict = json.loads(json_str)
+                instruction = recipe_dict["instruction"].strip()
+                ingredients = [ing.strip() for ing in recipe_dict["ingredients"] if ing]
+                steps = [step.strip() for step in recipe_dict["steps"] if step]
+
+                if len(instruction) <= 15:
+                    instruction = ""
+                    raise Exception("No instruction found / below 15 characters.")
+                elif type(ingredients) is not list:
+                    ingredients = ""
+                    raise Exception("Ingredients not in list format.")
+                elif len(ingredients) < 1:
+                    ingredients = ""
+                    raise Exception("One or no ingredient found.")
+                elif type(steps) is not list:
+                    steps = ""
+                    raise Exception("Steps not in list format.")
+                elif len(steps) < 1:
+                    steps = ""
+                    raise Exception("One or no cooking step found.")
+                break
+            except Exception as e:
+                error_msgs.append(e)
+                continue
+
+        assert all([instruction, ingredients, steps]), f"{error_msgs[-1]}"
+
+        out_dict = {
+            "instruction": instruction,
+            "ingredients": ingredients,
+            "steps": steps,
+        }
+        return out_dict
+
+    def _default_error(self, input: Dict[str, Any]) -> Dict[str, Any]:
+        """Returns a default error output, to fill the responses in case of failure."""
+        input.update(
+            **{
+                "query": None,
+                "answers": json.dumps([None] * self._number),
+            }
+        )
+        return input
